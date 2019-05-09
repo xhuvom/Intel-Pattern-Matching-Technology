@@ -28,7 +28,7 @@ const unsigned int trainingReps = 4;
 
 /* Increase this to 'A-Z' if you like-- it just takes a lot longer to train */
 const unsigned char trainingStart = 'A';
-const unsigned char trainingEnd = 'F';
+const unsigned char trainingEnd = 'D';
 
 /* The input pin used to signal when a letter is being drawn- you'll
  * need to make sure a button is attached to this pin */
@@ -52,6 +52,8 @@ const unsigned int sensorBufSize = 2048;
 const int IMULow = -32768;
 const int IMUHigh = 32767;
 
+boolean ledState = false;  // Motion Activation Flag 
+
 void setup()
 {
     Serial.begin(9600);
@@ -61,13 +63,26 @@ void setup()
 
     /* Start the IMU (Intertial Measurement Unit) */
     CurieIMU.begin();
+CurieIMU.attachInterrupt(eventCallback);
 
+  /* Enable Zero Motion Detection */
+  CurieIMU.setDetectionThreshold(CURIE_IMU_ZERO_MOTION, 50);  // 50mg
+  CurieIMU.setDetectionDuration(CURIE_IMU_ZERO_MOTION, 2);    // 2s
+  CurieIMU.interrupts(CURIE_IMU_ZERO_MOTION);
+
+  /* Enable Motion Detection */
+  CurieIMU.setDetectionThreshold(CURIE_IMU_MOTION, 20);      // 20mg
+  CurieIMU.setDetectionDuration(CURIE_IMU_MOTION, 10);       // trigger times of consecutive slope data points
+  CurieIMU.interrupts(CURIE_IMU_MOTION);
+
+  Serial.println("IMU initialisation complete, waiting for events...");
     /* Start the PME (Pattern Matching Engine) */
     CuriePME.begin();
 
     CurieIMU.setAccelerometerRate(sampleRateHZ);
     CurieIMU.setAccelerometerRange(2);
-
+pinMode(11, OUTPUT);
+digitalWrite(11, LOW);
     trainLetters();
     Serial.println("Training complete. Now, draw some letters (remember to ");
     Serial.println("hold the button) and see if the PME can classify them.");
@@ -164,11 +179,14 @@ void readVectorFromIMU(byte vector[])
     unsigned int samples = 0;
     unsigned int i = 0;
 
-    /* Wait until button is pressed */
-    while (digitalRead(buttonPin) == LOW);
+    /* Wait until Motion detection inturrupt flag  */
+    while (ledState == false)
+{
+    digitalWrite(11, LOW);  // Optional Beeper
+}
+    /* While Motion detection inturrupt flag being held... */
+    while (ledState == true) {
 
-    /* While button is being held... */
-    while (digitalRead(buttonPin) == HIGH) {
         if (CurieIMU.accelDataReady()) {
 
             CurieIMU.readAccelerometer(raw[0], raw[1], raw[2]);
@@ -186,7 +204,11 @@ void readVectorFromIMU(byte vector[])
             if (i + 3 > sensorBufSize) {
                 break;
             }
+
         }
+digitalWrite(11, HIGH);
+delay(50);
+digitalWrite(11, LOW);
     }
 
     undersample(accel, samples, vector);
@@ -213,8 +235,8 @@ void trainLetter(char letter, unsigned int repeat)
 void trainLetters()
 {
     for (char i = trainingStart; i <= trainingEnd; ++i) {
-        Serial.print("Hold down the button and draw the letter '");
-        Serial.print(String(i) + "' in the air. Release the button as soon ");
+        Serial.print("Initiate Motion and draw the letter '");
+        Serial.print(String(i) + "' in the air. Here is no button, CURIE ZERO MOTION DETECTION activation automatically after drawing the letter ");
         Serial.println("as you are done.");
 
         trainLetter(i, trainingReps);
@@ -223,6 +245,34 @@ void trainLetters()
     }
 }
 
+
+
+// MOTION DETECTION interrupt subroutine 
+
+// global variable motion flag
+
+
+static void eventCallback(void){
+  if (CurieIMU.getInterruptStatus(CURIE_IMU_ZERO_MOTION)) {
+    ledState = false; 
+   // Serial.println("zero motion detected...");
+  }  
+  if (CurieIMU.getInterruptStatus(CURIE_IMU_MOTION)) {
+    ledState = true;
+   /* if (CurieIMU.motionDetected(X_AXIS, POSITIVE))
+      Serial.println("Negative motion detected on X-axis");
+    if (CurieIMU.motionDetected(X_AXIS, NEGATIVE))
+      Serial.println("Positive motion detected on X-axis");
+    if (CurieIMU.motionDetected(Y_AXIS, POSITIVE))
+      Serial.println("Negative motion detected on Y-axis");
+    if (CurieIMU.motionDetected(Y_AXIS, NEGATIVE))
+      Serial.println("Positive motion detected on Y-axis");
+    if (CurieIMU.motionDetected(Z_AXIS, POSITIVE))
+      Serial.println("Negative motion detected on Z-axis");
+    if (CurieIMU.motionDetected(Z_AXIS, NEGATIVE))
+      Serial.println("Positive motion detected on Z-axis");*/
+  }  
+}
 /*
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
